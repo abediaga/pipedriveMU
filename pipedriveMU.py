@@ -335,6 +335,8 @@ def get_connection_pipedrive(api_key) :
     return (pipedrive)
 
 def sync_woocommerce_pipedrive () :
+	global host
+	
     miConexion = get_connection_database(host,user,passwd,db)
     pipedrive = get_connection_pipedrive(API_KEY)
 	
