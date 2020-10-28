@@ -232,6 +232,7 @@ def get_activities_user (user_id) :
 
 #Obtener la fecha del último deal
 def get_last_deal_datetime() :
+	global pipedrive
     deals = pipedrive.deals(method='GET')
     if not deals["data"] :
         last_deal_datetime = "2000-01-01 00:00:00"
