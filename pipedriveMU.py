@@ -334,11 +334,10 @@ def get_connection_pipedrive(api_key) :
     pipedrive = Pipedrive(api_key)
     return (pipedrive)
 
-def sync_woocommerce_pipedrive () :
-	global host
+def sync_woocommerce_pipedrive (database_data, pipedrive_data) :
 	
-    miConexion = get_connection_database(host,user,passwd,db)
-    pipedrive = get_connection_pipedrive(API_KEY)
+    miConexion = get_connection_database(database_data["host"],database_data["user"],database_data["passwd"],database_data["db"])
+    pipedrive = get_connection_pipedrive(pipedrive_data["API_KEY"])
 	
     last_deal_datetime = get_last_deal_datetime()
     orders = get_woocommerce_orders_fromdate(miConexion, last_deal_datetime)
