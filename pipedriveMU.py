@@ -330,10 +330,14 @@ def get_organization() :
 
 # In[176]:
 
+def get_connection_pipedrive(api_key) :
+    pipedrive = Pipedrive(api_key)
+    return (pipedrive)
 
 def sync_woocommerce_pipedrive () :
     miConexion = get_connection_database(host,user,passwd,db)
-    
+    pipedrive = get_connection_pipedrive(API_KEY)
+	
     last_deal_datetime = get_last_deal_datetime()
     orders = get_woocommerce_orders_fromdate(miConexion, last_deal_datetime)
     if orders :
