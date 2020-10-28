@@ -232,7 +232,6 @@ def get_activities_user (user_id) :
 
 #Obtener la fecha del último deal
 def get_last_deal_datetime() :
-	global pipedrive
     deals = pipedrive.deals(method='GET')
     if not deals["data"] :
         last_deal_datetime = "2000-01-01 00:00:00"
@@ -346,9 +345,11 @@ def sync_woocommerce_pipedrive (database_data, pipedrive_data) :
         for order in orders:
             order_id = order[0]
             order_details = get_woocommerce_order_details(miConexion, order_id)
-            deal_name = "Pedido ID " + str(order_id)
+            
+			deal_name = "Pedido ID " + str(order_id)
             deal_value = order_details["_order_total"]
-            pipeline_id = get_pipeline('Embudo Data Running')["id"]
+            
+			pipeline_id = get_pipeline('Embudo Data Running')["id"]
             stage_id = get_stage_frompipeline(pipeline_id,"Pedidos realizados")["id"]
             nuevo_deal = add_new_deal(deal_name, deal_value, pipeline_id, stage_id)
             customer_details = get_woocommerce_customer_details(miConexion, order_id)
