@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[340]:
+# In[346]:
 
 
 import datetime
@@ -12,7 +12,7 @@ from pipedrive import Pipedrive
 import pymysql
 
 
-# In[341]:
+# In[362]:
 
 
 class WooCommerce ():
@@ -23,7 +23,13 @@ class WooCommerce ():
     
     def __del__(self):
         self.miConexion.close()
-        
+    
+    def check_table(self, table_name) :
+        database = self.miConexion.cursor()
+        database.execute( "show tables like '"+ table_name +"';")
+        result = database.fetchall()
+        return (result)
+    
     def get_last_order_datetime(self):
         database = self.miConexion.cursor()
         database.execute( "SELECT * FROM wp_posts WHERE post_type = 'shop_order' ORDER BY post_date DESC" )
@@ -138,7 +144,7 @@ class WooCommerce ():
         return(sent_contact_forms)
 
 
-# In[342]:
+# In[381]:
 
 
 class PipedriveMU ():
@@ -152,7 +158,13 @@ class PipedriveMU ():
     
     def get_organization(self) :
         result = self.pipedrive.organizations(method='GET')
-        return(result["data"][0])
+        if result :
+            result2 = self.pipedrive.organizations({
+            "name" : "Mondragon Unibertsitatea"
+        },method='POST')
+            return(result2["data"])
+        else :
+            return(result["data"][0])
     
     def get_pipelines(self) :
         result = self.pipedrive.pipelines(method='GET')
@@ -239,7 +251,7 @@ class PipedriveMU ():
         return last_deal_datetime
 
     def get_last_deal_pipeline_datetime(self, funnel_name) :
-        pipeline_id = pipedrive_bdata.get_pipeline(funnel_name)["id"]
+        pipeline_id = self.get_pipeline(funnel_name)["id"]
         
         deals_pipeline = []
         
@@ -388,84 +400,91 @@ class PipedriveMU ():
     
 
 
-# In[343]:
+# In[382]:
 
 
 def sync_woocommerce_pipedrive (database_data, pipedrive_data) :
     wooCommerce_bdata = WooCommerce(database_data["host"],database_data["user"],database_data["passwd"],database_data["db"])
+    
     pipedrive_bdata = PipedriveMU(pipedrive_data["api_token"])
     
+    exist_orders_table = wooCommerce_bdata.check_table("wp_posts")
     
-    last_deal_datetime = pipedrive_bdata.get_last_deal_pipeline_datetime(pipedrive_data["orders_funnel_name"])
-    orders = wooCommerce_bdata.get_all_orders_fromdate(last_deal_datetime)
+    if exist_orders_table :
+        
+        last_deal_datetime = pipedrive_bdata.get_last_deal_pipeline_datetime(pipedrive_data["orders_funnel_name"])
+        orders = wooCommerce_bdata.get_all_orders_fromdate(last_deal_datetime)
+
+        if orders :
+            for order in orders:
+                order_id = order[0]
+
+                order_details = wooCommerce_bdata.get_order_details(order_id)
+
+                deal_name = "Pedido ID " + str(order_id)
+                deal_value = order_details["_order_total"]
+
+                pipeline_id = pipedrive_bdata.get_pipeline(pipedrive_data["orders_funnel_name"])["id"]
+
+                stage_id = pipedrive_bdata.get_stage_frompipeline(pipeline_id,pipedrive_data["order_to_stage"])["id"]
+
+                nuevo_deal = pipedrive_bdata.add_new_deal(deal_name, deal_value, pipeline_id, stage_id)
+
+                customer_details = wooCommerce_bdata.get_customer_details(order_id)
+
+                organization = pipedrive_bdata.get_organization()
+
+                c_owner_id = organization["owner_id"]["id"]
+                c_org_id = organization["id"]
+                c_first_name = customer_details["_billing_first_name"]
+                c_last_name = customer_details["_billing_last_name"]
+                c_phone = customer_details["_billing_phone"]
+                c_email = customer_details["_billing_email"]
+
+                id_contacto = pipedrive_bdata.get_contact_id_email(c_email)
+                if id_contacto == 0 :
+                    new_contact = pipedrive_bdata.add_contact(c_owner_id, c_org_id, c_first_name, c_last_name, c_phone, c_email)
+                    #pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], new_contact["id"])
+                    pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], pipedrive_bdata.get_contact_id_email(c_email))
+                else :
+                    #asignar contacto
+                    pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], id_contacto)
+
+
+                activity_name = "Validar pedido ID " + str(order_id)
+                organization_id = organization["company_id"]
+
+                pipedrive_bdata.add_activity_deal(organization_id, c_owner_id, nuevo_deal["data"]["id"], "task", activity_name, c_owner_id)
     
-    if orders :
-        for order in orders:
-            order_id = order[0]
-            
-            order_details = wooCommerce_bdata.get_order_details(order_id)
-            
-            deal_name = "Pedido ID " + str(order_id)
-            deal_value = order_details["_order_total"]
-            
-            pipeline_id = pipedrive_bdata.get_pipeline(pipedrive_data["orders_funnel_name"])["id"]
-            
-            stage_id = pipedrive_bdata.get_stage_frompipeline(pipeline_id,pipedrive_data["order_to_stage"])["id"]
-            
-            nuevo_deal = pipedrive_bdata.add_new_deal(deal_name, deal_value, pipeline_id, stage_id)
-            
-            customer_details = wooCommerce_bdata.get_customer_details(order_id)
-            
-            organization = pipedrive_bdata.get_organization()
-            
-            c_owner_id = organization["owner_id"]["id"]
-            c_org_id = organization["id"]
-            c_first_name = customer_details["_billing_first_name"]
-            c_last_name = customer_details["_billing_last_name"]
-            c_phone = customer_details["_billing_phone"]
-            c_email = customer_details["_billing_email"]
-            
-            id_contacto = pipedrive_bdata.get_contact_id_email(c_email)
-            if id_contacto == 0 :
-                new_contact = pipedrive_bdata.add_contact(c_owner_id, c_org_id, c_first_name, c_last_name, c_phone, c_email)
-                #pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], new_contact["id"])
-                pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], pipedrive_bdata.get_contact_id_email(c_email))
-            else :
-                #asignar contacto
-                pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], id_contacto)
-            
-            
-            activity_name = "Validar pedido ID " + str(order_id)
-            organization_id = organization["company_id"]
-            
-            pipedrive_bdata.add_activity_deal(organization_id, c_owner_id, nuevo_deal["data"]["id"], "task", activity_name, c_owner_id)
+    exist_contactforms_table = wooCommerce_bdata.check_table("wp_vxcf_leads")
     
-    last_deal_datetime = pipedrive_bdata.get_last_deal_pipeline_datetime(pipedrive_data["contact_form_funnel_name"])
-    contact_forms = wooCommerce_bdata.get_sent_contact_forms_fromdate(last_deal_datetime)
-    if contact_forms :
-        for contact_form in contact_forms:
-            deal_name = "Formulario ID " + str(contact_form["id"])
-            deal_value = 0
-            pipeline_id = pipedrive_bdata.get_pipeline(pipedrive_data["contact_form_funnel_name"])["id"]
-            stage_id = pipedrive_bdata.get_stage_frompipeline(pipeline_id,pipedrive_data["contactform_to_stage"])["id"]
-            
-            nuevo_deal = pipedrive_bdata.add_new_deal(deal_name, deal_value, pipeline_id, stage_id)
-            
-            organization = pipedrive_bdata.get_organization()
-            c_owner_id = organization["owner_id"]["id"]
-            c_org_id = organization["id"]
-            
-            id_contacto = pipedrive_bdata.get_contact_id_email(contact_form["your-email"])
-            if id_contacto == 0 :
-                new_contact = pipedrive_bdata.add_contact(c_owner_id, c_org_id, contact_form["your-name"], "", 0, contact_form["your-email"])
-                pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], pipedrive_bdata.get_contact_id_email(contact_form["your-email"]))
-            else :
-                pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], id_contacto)
-            
-            activity_name = "Responder formulario ID " + str(contact_form["id"])
-            organization_id = organization["company_id"]
-            
-            pipedrive_bdata.add_activity_deal(organization_id, c_owner_id, nuevo_deal["data"]["id"], "task", activity_name, c_owner_id)
+    if exist_contactforms_table :
+        last_deal_datetime = pipedrive_bdata.get_last_deal_pipeline_datetime(pipedrive_data["contact_form_funnel_name"])
+        contact_forms = wooCommerce_bdata.get_sent_contact_forms_fromdate(last_deal_datetime)
+        if contact_forms :
+            for contact_form in contact_forms:
+                deal_name = "Formulario ID " + str(contact_form["id"])
+                deal_value = 0
+                pipeline_id = pipedrive_bdata.get_pipeline(pipedrive_data["contact_form_funnel_name"])["id"]
+                stage_id = pipedrive_bdata.get_stage_frompipeline(pipeline_id,pipedrive_data["contactform_to_stage"])["id"]
+
+                nuevo_deal = pipedrive_bdata.add_new_deal(deal_name, deal_value, pipeline_id, stage_id)
+
+                organization = pipedrive_bdata.get_organization()
+                c_owner_id = organization["owner_id"]["id"]
+                c_org_id = organization["id"]
+
+                id_contacto = pipedrive_bdata.get_contact_id_email(contact_form["your-email"])
+                if id_contacto == 0 :
+                    new_contact = pipedrive_bdata.add_contact(c_owner_id, c_org_id, contact_form["your-name"], "", 0, contact_form["your-email"])
+                    pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], pipedrive_bdata.get_contact_id_email(contact_form["your-email"]))
+                else :
+                    pipedrive_bdata.assign_contact_to_deal(nuevo_deal["data"]["id"], id_contacto)
+
+                activity_name = "Responder formulario ID " + str(contact_form["id"])
+                organization_id = organization["company_id"]
+
+                pipedrive_bdata.add_activity_deal(organization_id, c_owner_id, nuevo_deal["data"]["id"], "task", activity_name, c_owner_id)
     
         
 
